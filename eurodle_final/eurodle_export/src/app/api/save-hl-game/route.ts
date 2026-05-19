@@ -2,7 +2,6 @@ import { NextResponse } from 'next/server';
 import mongoose from 'mongoose';
 import User from '@/lib/models/User';
 import { getServerSession } from 'next-auth/next'; 
-// import { authOptions } from "@/src/app/api/auth/[...nextauth]/route"; // Βάλε το σωστό path για το authOptions σου αν χρειάζεται
 
 // Υπολογισμός Τρέχουσας Ημερομηνίας Ελλάδος
 const getGreeceDate = () => {
@@ -18,26 +17,27 @@ export async function POST(req: Request) {
   try {
     const session = await getServerSession(); 
     if (!session?.user?.email) {
-      return NextResponse.json({ error: "Μη εξουσιοδοτημένος χρήστης" }, { status: 401 });
+      return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
     }
 
-    const { pointsToAdd, finalScore } = await req.json();
+    const { finalScore } = await req.json();
+    const calculatedPoints = (finalScore || 0) * 5;
 
     if (mongoose.connection.readyState < 1) await mongoose.connect(process.env.MONGODB_URI as string);
 
     const user = await User.findOne({ email: session.user.email });
-    if (!user) return NextResponse.json({ error: "Ο χρήστης δεν βρέθηκε" }, { status: 404 });
+    if (!user) return NextResponse.json({ error: "User not found" }, { status: 404 });
 
     const todayGreek = getGreeceDate();
 
     // Αν η μέρα που έχει αποθηκευτεί είναι η σημερινή, τον κόβουμε
     if (user.lastPlayedHL === todayGreek) {
-      return NextResponse.json({ error: "Έχεις ήδη παίξει για σήμερα!" }, { status: 400 });
+      return NextResponse.json({ error: "Already played today" }, { status: 400 });
     }
 
     // Ενημέρωση του χρήστη
     user.lastPlayedHL = todayGreek; // Τον "κλειδώνουμε" για σήμερα
-    user.score += pointsToAdd;      // Του δίνουμε τους πόντους
+    user.score += calculatedPoints;      // Του δίνουμε τους πόντους
     
     // Αν έκανε νέο ρεκόρ, το αποθηκεύουμε
     if (finalScore > user.bestHlScore) {
@@ -49,11 +49,12 @@ export async function POST(req: Request) {
     return NextResponse.json({ 
       success: true, 
       newTotalScore: user.score, 
-      bestHlScore: user.bestHlScore 
+      bestHlScore: user.bestHlScore,
+      points: calculatedPoints
     });
 
   } catch (error) {
     console.error(error);
-    return NextResponse.json({ error: "Σφάλμα κατά την αποθήκευση" }, { status: 500 });
+    return NextResponse.json({ error: "Error saving game" }, { status: 500 });
   }
 }

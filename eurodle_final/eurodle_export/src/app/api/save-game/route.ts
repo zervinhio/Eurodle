@@ -2,15 +2,35 @@ import { NextResponse } from "next/server";
 import { getServerSession } from "next-auth/next";
 import { connectDB } from "@/lib/mongodb";
 import User from "@/lib/models/User";
-import DailyStat from "@/lib/models/DailyStat"; // Φορτώνουμε το νέο μοντέλο!
+import DailyStat from "@/lib/models/DailyStat";
+
+function getPoints(guessNumber: number, mode: string): number {
+  if (mode === 'player_id') {
+    // Logic: 100 max, -20 per hint (assuming guessesCount is used as hint count or similar)
+    // For now, let's stick to the 100-80-70-60-40-20-10 logic if guessesCount is provided
+    // or a fixed logic for path.
+    // Based on frontend: 100 - (hints * 20), min 20.
+    // We'll pass hints count as guessesCount for path mode.
+    let pts = 100 - (guessNumber * 20);
+    return Math.max(pts, 20);
+  }
+  
+  // Classic mode logic
+  if (guessNumber <= 5) return 100; 
+  if (guessNumber <= 8) return 80; 
+  if (guessNumber <= 11) return 70;
+  if (guessNumber <= 14) return 60; 
+  if (guessNumber <= 17) return 40; 
+  if (guessNumber <= 20) return 20; 
+  return 10;
+}
 
 export async function POST(req: Request) {
   try {
     const session = await getServerSession();
     if (!session || !session.user?.email) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
 
-    // Τώρα παίρνουμε και το guessesCount από το frontend!
-    const { points, guessesCount } = await req.json();
+    const { guessesCount, mode } = await req.json();
     await connectDB();
 
     const user = await User.findOne({ email: session.user.email });
@@ -20,62 +40,51 @@ export async function POST(req: Request) {
     const now = new Date();
     const todayAthens = athensFormatter.format(now);
 
-    let newStreak = user.streak || 0;
-    let isAlreadyPlayed = false;
+    const calculatedPoints = getPoints(guessesCount || 0, mode || 'classic');
 
-    if (user.lastPlayed) {
-      const lastPlayedAthens = athensFormatter.format(new Date(user.lastPlayed));
-      
-      if (todayAthens === lastPlayedAthens) {
-        isAlreadyPlayed = true;
-      } else {
-        const todayDate = new Date(todayAthens);
-        const lastPlayedDate = new Date(lastPlayedAthens);
-        
-        // Βάλαμε Math.round για απόλυτη ασφάλεια στις αλλαγές ώρας
-        const diffDays = Math.round((todayDate.getTime() - lastPlayedDate.getTime()) / (1000 * 60 * 60 * 24));
-        
-        if (diffDays === 1) {
-          newStreak += 1; // Συνεχίζει το σερί!
-        } else {
-          newStreak = 1; // Έχασε μέρα (άφησε το παιχνίδι στη μέση χθες), το σερί ξεκινάει πάλι από το 1.
-        }
-      }
-    } else {
-      newStreak = 1; // Πρώτη φορά που παίζει
-    }
-
-    // --- ΒΡΕΣ Η ΦΤΙΑΞΕ ΤΑ ΣΗΜΕΡΙΝΑ ΣΤΑΤΙΣΤΙΚΑ (DailyStat) ---
     let dailyStat = await DailyStat.findOne({ date: todayAthens });
     if (!dailyStat) {
       dailyStat = await DailyStat.create({ date: todayAthens, totalGuesses: 0, totalWinners: 0 });
     }
 
-    // Αν έχει ήδη παίξει, απλά του επιστρέφουμε τον τρέχοντα μέσο όρο χωρίς να τον προσθέσουμε ξανά
-    if (isAlreadyPlayed) {
-      const avg = dailyStat.totalWinners > 0 ? (dailyStat.totalGuesses / dailyStat.totalWinners).toFixed(1) : 0;
-      return NextResponse.json({ error: "Already played today", streak: user.streak, score: user.score, globalAverage: avg }, { status: 400 });
+    if (!mode || mode === 'classic') {
+      if (user.lastPlayed) {
+        const lastPlayedAthens = athensFormatter.format(new Date(user.lastPlayed));
+        if (todayAthens === lastPlayedAthens) {
+          const avg = dailyStat.totalWinners > 0 ? (dailyStat.totalGuesses / dailyStat.totalWinners).toFixed(1) : 0;
+          return NextResponse.json({ error: "Already played today", streak: user.streak, score: user.score, globalAverage: avg }, { status: 400 });
+        }
+      }
+
+      let newStreak = 1;
+      if (user.lastPlayed) {
+        const lastPlayedAthens = athensFormatter.format(new Date(user.lastPlayed));
+        const todayDate = new Date(todayAthens);
+        const lastPlayedDate = new Date(lastPlayedAthens);
+        const diffDays = Math.round((todayDate.getTime() - lastPlayedDate.getTime()) / (1000 * 60 * 60 * 24));
+        if (diffDays === 1) newStreak = (user.streak || 0) + 1;
+      }
+
+      user.score = (user.score || 0) + calculatedPoints;
+      user.streak = newStreak;
+      user.lastPlayed = now;
+      if (user.streak > (user.maxStreak || 0)) user.maxStreak = user.streak;
+
+      if (guessesCount) {
+        dailyStat.totalGuesses += guessesCount;
+        dailyStat.totalWinners += 1;
+        await dailyStat.save();
+      }
+    } else if (mode === 'player_id') {
+      user.score = (user.score || 0) + calculatedPoints;
     }
 
-    // --- 1. ΕΝΗΜΕΡΩΣΗ ΧΡΗΣΤΗ ---
-    user.score = (user.score || 0) + points;
-    user.streak = newStreak;
-    user.lastPlayed = now;
-    if (user.streak > (user.maxStreak || 0)) user.maxStreak = user.streak;
     await user.save();
+    const globalAverage = dailyStat.totalWinners > 0 ? (dailyStat.totalGuesses / dailyStat.totalWinners).toFixed(1) : (guessesCount || 0);
 
-    // --- 2. ΕΝΗΜΕΡΩΣΗ GLOBAL ΣΤΑΤΙΣΤΙΚΩΝ ---
-    if (guessesCount) {
-      dailyStat.totalGuesses += guessesCount;
-      dailyStat.totalWinners += 1;
-      await dailyStat.save();
-    }
-
-    // Υπολογισμός του νέου μέσου όρου (στρογγυλοποίηση στο 1 δεκαδικό, π.χ. 4.2)
-    const globalAverage = dailyStat.totalWinners > 0 ? (dailyStat.totalGuesses / dailyStat.totalWinners).toFixed(1) : guessesCount;
-
-    return NextResponse.json({ success: true, streak: user.streak, score: user.score, globalAverage });
+    return NextResponse.json({ success: true, streak: user.streak, score: user.score, globalAverage, points: calculatedPoints });
   } catch (error) {
+    console.error("Save game error:", error);
     return NextResponse.json({ error: "Internal Server Error" }, { status: 500 });
   }
 }

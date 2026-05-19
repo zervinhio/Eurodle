@@ -14,6 +14,7 @@ export interface IPlayer extends Document {
   imageUrl: string;
   dorsal: string; // Το νούμερο της φανέλας
   active: boolean;
+  eligibleForHL: boolean; // <--- ΠΡΟΣΘΗΚΗ
   // ΠΡΟΣΘΗΚΗ: Στατιστικά της σεζόν
   stats: {
     ppg: number; // Points Per Game
@@ -36,6 +37,7 @@ const PlayerSchema = new Schema<IPlayer>(
     imageUrl:    String,
     dorsal:      String,
     active:      { type: Boolean, default: true },
+    eligibleForHL: { type: Boolean, default: true }, // <--- ΠΡΟΣΘΗΚΗ
     // ΠΡΟΣΘΗΚΗ: Στατιστικά
     stats: {
       ppg: { type: Number, default: 0 },

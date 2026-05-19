@@ -21,7 +21,7 @@ const ICON_STORAGE_KEY = "eurodle_custom_icon";
 const STORAGE_KEY = "eurodle_state_v5";
 
 type Color = "green" | "yellow" | "red";
-type GameMode = "menu" | "classic" | "higher_lower";
+type GameMode = "menu" | "classic" | "higher_lower" | "player_id";
 
 interface SearchResult { playerId: string; name: string; team: string; position: string; imageUrl: string; }
 interface Guess { name: string; team: string; position: string; nationality: string; height: number; imageUrl: string; isCorrect: boolean; feedback: { team: Color; position: Color; nationality: Color; height: Color; heightArrow: "up" | "down" | null; }; }
@@ -158,6 +158,19 @@ export default function EurodlePage() {
   const [todayDate, setTodayDate] = useState("");
   const [showDropdown, setShowDropdown] = useState(false);
   const [showCelebration, setShowCelebration] = useState(false);
+  // --- Player Path States ---
+  const [pathPlayer, setPathPlayer] = useState<any>(null);
+  const [pathGuesses, setPathGuesses] = useState<string[]>([]);
+  const [pathGameOver, setPathGameOver] = useState(false);
+  const [pathWon, setPathWon] = useState(false);
+  const [pathPoints, setPathPoints] = useState(0); // <--- ΝΕΟ STATE
+  const [showPathCelebration, setShowPathCelebration] = useState(false); // <--- ΝΕΟ STATE
+  const [pathQuery, setPathQuery] = useState("");
+  const [pathSuggestions, setPathSuggestions] = useState<SearchResult[]>([]);
+  const [pathSelected, setPathSelected] = useState<SearchResult | null>(null);
+  const [pathHasPlayedToday, setPathHasPlayedToday] = useState(false); // <--- ΝΕΟ STATE
+  const [pathUnlockedHints, setPathUnlockedHints] = useState<number[]>([]); // <--- ΝΕΟ STATE ΓΙΑ HINTS
+  const pathInputRef = useRef<HTMLInputElement>(null); // <--- ΝΕΟ (πρόσθεσε αυτό)
 
   // Global App States
   const [showProfile, setShowProfile] = useState(false);
@@ -253,13 +266,12 @@ export default function EurodlePage() {
         // Αποθήκευση στη βάση αν είναι συνδεδεμένος
         if (session?.user) {
           try {
-            const pointsEarned = hlScore * 10; // 10 πόντοι για κάθε σωστή μαντεψιά
+            const pointsEarned = hlScore * 5; // 5 πόντοι για κάθε σωστή μαντεψιά (μισοί από πριν)
             
             const res = await fetch("/api/save-hl-game", {
               method: "POST",
               headers: { "Content-Type": "application/json" },
               body: JSON.stringify({ 
-                pointsToAdd: pointsEarned,
                 finalScore: hlScore
               })
             });
@@ -286,13 +298,100 @@ export default function EurodlePage() {
     const savedIcon = localStorage.getItem(ICON_STORAGE_KEY);
     if (savedIcon) setCustomIcon(savedIcon);
   }, []);
+  useEffect(() => {
+    if (activeMode === "player_id" && !pathPlayer) {
+      fetch("/api/player-id")
+        .then(res => res.json())
+        .then(data => setPathPlayer(data))
+        .catch(err => console.error("Error fetching player path:", err));
+    }
+  }, [activeMode, pathPlayer]); 
+
+  useEffect(() => {
+    const todayStr = new Intl.DateTimeFormat('en-CA', { timeZone: 'Europe/Athens' }).format(new Date());
+    const rawPath = localStorage.getItem("eurodle_path_state");
+
+    // Clean up sync flags if it's a new day
+    const lastSyncDate = localStorage.getItem("eurodle_last_sync_date");
+    if (lastSyncDate !== todayStr) {
+      localStorage.removeItem("eurodle_classic_synced");
+      localStorage.removeItem("eurodle_path_synced");
+      localStorage.setItem("eurodle_last_sync_date", todayStr);
+    }
+
+    if (rawPath) {
+      const savedPath = JSON.parse(rawPath);
+      if (savedPath.date === todayStr && savedPath.gameOver) {
+        setPathHasPlayedToday(true);
+        setPathWon(savedPath.won ?? false);
+        setPathGuesses(savedPath.guesses ?? []);
+        setPathPlayer(savedPath.player ?? null);
+        setPathUnlockedHints(savedPath.unlockedHints ?? []);
+        setPathPoints(savedPath.points ?? 0);
+        setPathGameOver(true);
+      } else if (savedPath.date === todayStr) {
+        // Αν δεν έχει τελειώσει αλλά έχει ξεκινήσει
+        setPathGuesses(savedPath.guesses ?? []);
+        setPathUnlockedHints(savedPath.unlockedHints ?? []);
+        setPathPlayer(savedPath.player ?? null);
+      } else {
+        // Παλιά ημερομηνία - καθαρισμός για την επόμενη μέρα
+        localStorage.removeItem("eurodle_path_state");
+      }
+    }
+  }, []);
 
   useEffect(() => {
     if (session?.user) {
       setLocalStreak((session.user as any).streak || 0);
       setLocalScore((session.user as any).score || 0);
+
+      // --- PROGRESS SYNC: GUEST TO USER ---
+      const todayStr = new Intl.DateTimeFormat('en-CA', { timeZone: 'Europe/Athens' }).format(new Date());
+
+      // 1. Sync Classic Mode
+      const rawClassic = localStorage.getItem(STORAGE_KEY);
+      if (rawClassic) {
+        const saved = JSON.parse(rawClassic);
+        if (saved.date === todayStr && saved.won && !localStorage.getItem("eurodle_classic_synced")) {
+          const pts = getPoints(saved.guesses.length);
+          fetch("/api/save-game", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ points: pts, guessesCount: saved.guesses.length, mode: 'classic' })
+          })
+          .then(res => res.json())
+          .then(data => {
+            if (data.success) {
+              setLocalScore(data.score);
+              setLocalStreak(data.streak);
+              localStorage.setItem("eurodle_classic_synced", "true");
+            }
+          });
+        }
+      }
+
+      // 2. Sync Player ID (Path) Mode
+      const rawPath = localStorage.getItem("eurodle_path_state");
+      if (rawPath) {
+        const savedPath = JSON.parse(rawPath);
+        if (savedPath.date === todayStr && savedPath.won && !localStorage.getItem("eurodle_path_synced")) {
+          fetch("/api/save-game", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ points: savedPath.points, mode: 'player_id' })
+          })
+          .then(res => res.json())
+          .then(data => {
+            if (data.success) {
+              setLocalScore(data.score);
+              localStorage.setItem("eurodle_path_synced", "true");
+            }
+          });
+        }
+      }
     }
-  }, [session]);
+  }, [session, todayDate]);
 
   useEffect(() => {
     fetch("/api/daily").then(r => r.json()).then(({ date }) => {
@@ -362,7 +461,7 @@ export default function EurodlePage() {
           fetch("/api/save-game", {
             method: "POST",
             headers: { "Content-Type": "application/json" },
-            body: JSON.stringify({ points: pts, guessesCount: newGuesses.length })
+            body: JSON.stringify({ guessesCount: newGuesses.length, mode: 'classic' })
           })
             .then(res => res.json())
             .then(data => {
@@ -381,6 +480,168 @@ export default function EurodlePage() {
       }
     } catch { setError("Network error"); } finally { setLoading(false); }
   }
+
+  const handlePathQueryChange = useCallback((val: string) => {
+    setPathQuery(val); setPathSelected(null);
+    const timeoutId = setTimeout(async () => {
+      if (val.length < 2) { setPathSuggestions([]); return; }
+      try {
+        const res = await fetch(`/api/search-path?q=${encodeURIComponent(val)}`);
+        const data = await res.json();
+        // Εξαιρούμε όσους έχει ήδη μαντέψει
+        setPathSuggestions(data.filter((p: SearchResult) => !pathGuesses.includes(p.name)));
+      } catch {}
+    }, 200);
+    return () => clearTimeout(timeoutId);
+  }, [pathGuesses]);
+
+  const executePathGuess = (guessedPlayer: SearchResult) => {
+    if (pathGameOver) return;
+    
+    const isCorrect = guessedPlayer.name.toLowerCase() === pathPlayer?.name.toLowerCase();
+    const newGuesses = [...pathGuesses, guessedPlayer.name];
+    
+    setPathGuesses(newGuesses);
+    setPathQuery(""); 
+    setPathSuggestions([]); 
+    setPathSelected(null);
+
+    const todayStr = new Intl.DateTimeFormat('en-CA', { timeZone: 'Europe/Athens' }).format(new Date());
+
+    // Έλεγχος αν τελείωσε
+    if (isCorrect || newGuesses.length >= 10) {
+      let earnedPoints = 0;
+      if (isCorrect) {
+        // Logic: 100 max, -20 per unlocked hint
+        earnedPoints = 100 - (pathUnlockedHints.length * 20);
+        if (earnedPoints < 20) earnedPoints = 20; // Minimum 20 points for winning
+      }
+      
+      setPathPoints(earnedPoints);
+      setPathWon(isCorrect);
+      setPathGameOver(true);
+      setPathHasPlayedToday(true);
+
+      if (isCorrect) {
+        setTimeout(() => setShowPathCelebration(true), 400);
+        
+        // Save points if logged in
+        if (session?.user) {
+          fetch("/api/save-game", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ guessesCount: pathUnlockedHints.length, mode: 'player_id' })
+          })
+          .then(res => res.json())
+          .then(data => {
+            if (data.success) {
+              setLocalScore(data.score);
+              setLocalStreak(data.streak);
+            }
+          });
+        }
+      }
+
+      localStorage.setItem("eurodle_path_state", JSON.stringify({
+        date: todayStr, gameOver: true, won: isCorrect, guesses: newGuesses, player: pathPlayer, unlockedHints: pathUnlockedHints, points: earnedPoints
+      }));
+    } else {
+      // Σώζουμε την κατάσταση ακόμα και αν δεν τελείωσε για να μην χάνονται τα hints/μαντεψιές
+      localStorage.setItem("eurodle_path_state", JSON.stringify({
+        date: todayStr, gameOver: false, won: false, guesses: newGuesses, player: pathPlayer, unlockedHints: pathUnlockedHints
+      }));
+      // Αν συνεχίζεται το παιχνίδι, ξαναβάζει αυτόματα τον κέρσορα στο Search Bar!
+      setTimeout(() => pathInputRef.current?.focus(), 10);
+    }
+  };
+
+  const handleUnlockHint = (index: number) => {
+    if (pathUnlockedHints.includes(index)) return;
+    
+    const newUnlocked = [...pathUnlockedHints, index];
+    setPathUnlockedHints(newUnlocked);
+    
+    const todayStr = new Intl.DateTimeFormat('en-CA', { timeZone: 'Europe/Athens' }).format(new Date());
+    localStorage.setItem("eurodle_path_state", JSON.stringify({
+      date: todayStr, gameOver: pathGameOver, won: pathWon, guesses: pathGuesses, player: pathPlayer, unlockedHints: newUnlocked
+    }));
+  };
+
+  const handlePathGuess = () => {
+    if (pathSelected) executePathGuess(pathSelected);
+  };
+
+  // Όταν πατάει Enter
+  const handlePathKeyDown = (e: React.KeyboardEvent<HTMLInputElement>) => {
+    if (e.key === "Enter") {
+      e.preventDefault();
+      // Αν έχει προτάσεις, μαντεύει αυτόματα τον 1ο της λίστας
+      if (pathSuggestions.length > 0) {
+        executePathGuess(pathSuggestions[0]);
+      } 
+      // Διαφορετικά, αν έχει ήδη επιλέξει κάποιον
+      else if (pathSelected) {
+        executePathGuess(pathSelected);
+      }
+    }
+  };
+
+  const renderPathCelebration = () => {
+    let title = "BASKET!"; let subText = "You identified the path!";
+    if (pathPoints === 100) { title = "SCOUTING PRO 🏆"; subText = "Zero hints needed. Mastermind!"; }
+    else if (pathPoints >= 80) { title = "ANALYST ⭐"; subText = "Solid identification with minimal help."; }
+    else if (pathPoints >= 60) { title = "VETERAN 🏀"; subText = "You know your Euroleague history."; }
+    else if (pathPoints >= 40)  { title = "ROLE PLAYER 📉"; subText = "Needed a few clues, but got there."; }
+    else { title = "BENCHWARMER"; subText = "Barely made the cut!"; } 
+
+    const confettiPieces = Array.from({ length: 80 }).map((_, i) => {
+      const size = Math.random() * 8 + 6;
+      const colors = ["#a855f7", "#fff", "#fbbf24", "#ea580c", "#16a34a", "#3b82f6"];
+      const color = colors[Math.floor(Math.random() * colors.length)];
+      const isCircle = Math.random() > 0.5;
+      const tx = (Math.random() - 0.5) * 600;
+      const ty = -(Math.random() * 200 + 100);
+      const fallY = Math.random() * 200 + 300;
+      const rotation = Math.random() * 720 - 360;
+      const delay = Math.random() * 0.2;
+      const duration = 1.5 + Math.random() * 1.5;
+
+      return (
+        <div key={`conf-path-${i}`} style={{
+          position: 'absolute', width: `${size}px`, height: `${size}px`,
+          backgroundColor: color, borderRadius: isCircle ? '50%' : '2px',
+          left: '50%', top: '40%', opacity: 0,
+          '--tx': `${tx}px`, '--ty': `${ty}px`, '--fall': `${fallY}px`, '--r': `${rotation}deg`,
+          animation: `confettiBurst ${duration}s ease-in-out ${delay}s forwards`,
+          zIndex: 5
+        } as React.CSSProperties} />
+      );
+    });
+
+    return (
+      <div style={{ position: "fixed", inset: 0, zIndex: 1000, display: "flex", alignItems: "center", justifyContent: "center", background: "rgba(0,0,0,0.85)", backdropFilter: "blur(8px)", animation: "fadeIn 0.3s ease" }} onClick={() => setShowPathCelebration(false)}>
+        <div style={{ background: "linear-gradient(135deg, #2e1065, #0f172a)", border: "2px solid #a855f7", borderRadius: 24, padding: "40px 30px", textAlign: "center", maxWidth: 380, width: "90%", position: "relative" }} onClick={e => e.stopPropagation()}>
+          {confettiPieces}
+          <div style={{ position: 'relative', zIndex: 10 }}>
+            <div style={{ fontSize: 60, marginBottom: 10 }}>🏆</div>
+            <div style={{ fontSize: 24, fontWeight: 900, color: "#a855f7", fontFamily: "'Barlow Condensed', sans-serif", marginBottom: 4 }}>{title}</div>
+            <p style={{ fontSize: 15, color: "#fff", marginBottom: 20, fontStyle: "italic" }}>"{subText}"</p>
+            <div style={{ display: "flex", justifyContent: "center", gap: 25, marginBottom: 25, background: "rgba(255,255,255,0.05)", padding: "15px", borderRadius: "16px" }}>
+              <div><div style={{ fontSize: 10, color: "#94a3b8", textTransform: "uppercase" }}>Score</div><div style={{ fontSize: 32, fontWeight: 900, color: "#fbbf24", fontFamily: "'Barlow Condensed', sans-serif" }}>+{pathPoints}</div></div>
+              <div style={{ borderLeft: "1px solid rgba(255,255,255,0.1)" }}></div>
+              <div><div style={{ fontSize: 10, color: "#94a3b8", textTransform: "uppercase" }}>Guesses</div><div style={{ fontSize: 32, fontWeight: 900, color: "#16a34a", fontFamily: "'Barlow Condensed', sans-serif" }}>{pathGuesses.length}</div></div>
+            </div>
+
+            <CountdownTimer />
+
+            <button onClick={() => { setShowPathCelebration(false); setActiveMode("classic"); }} style={{ width: "100%", padding: "14px", borderRadius: 12, fontSize: 16, fontWeight: 800, background: "linear-gradient(135deg, #a855f7, #7e22ce)", color: "#fff", border: "none", cursor: "pointer", fontFamily: "'Barlow Condensed', sans-serif", textTransform: "uppercase", marginTop: 10 }}>
+              CONTINUE ➔
+            </button>
+          </div>
+        </div>
+      </div>
+    );
+  };
 
   const handleLogout = async () => {
     localStorage.removeItem(STORAGE_KEY); localStorage.removeItem("temp_score"); localStorage.removeItem("temp_streak");
@@ -470,7 +731,7 @@ export default function EurodlePage() {
   };
 
  const renderHLResult = () => {
-    const earnedPoints = hlScore * 10;
+    const earnedPoints = hlScore * 5;
     let title = "GAME OVER";
     let subText = "Better luck tomorrow!";
     if (hlScore >= 10) { title = "LEGENDARY! 🏆"; subText = "You know your Euroleague stats!"; }
@@ -535,14 +796,60 @@ export default function EurodlePage() {
       <style>{`
         @import url('https://fonts.googleapis.com/css2?family=Barlow+Condensed:wght@400;600;700;800;900&family=Barlow:wght@400;500;600&display=swap');
         * { box-sizing: border-box; margin: 0; padding: 0; }
-        body { background: #0a1f0a; font-family: 'Barlow', sans-serif; color: white; }
+        body { background: #0a1f0a; font-family: 'Barlow', sans-serif; color: white; overflow-x: hidden; }
         @keyframes slideIn { from { opacity: 0; transform: translateY(12px); } to { opacity: 1; transform: translateY(0); } }
         @keyframes fadeIn { from { opacity: 0; } to { opacity: 1; } }
         
+        @keyframes pulse {
+          0% { transform: scale(1); opacity: 1; }
+          50% { transform: scale(1.05); opacity: 0.8; }
+          100% { transform: scale(1); opacity: 1; }
+        }
+
+        @keyframes shimmer {
+          0% { left: -100%; }
+          100% { left: 150%; }
+        }
+
         @keyframes confettiBurst {
           0% { transform: translate3d(0, 0, 0) rotate(0deg); opacity: 1; }
           35% { transform: translate3d(calc(var(--tx) * 0.6), var(--ty), 0) rotate(calc(var(--r) * 0.5)); opacity: 1; }
           100% { transform: translate3d(var(--tx), calc(var(--ty) + var(--fall)), 0) rotate(var(--r)); opacity: 0; }
+        }
+
+        .main-container {
+          position: relative;
+          z-index: 1;
+          max-width: 800px;
+          margin: 0 auto;
+          padding: 80px 16px 60px;
+          width: 100%;
+        }
+
+        @media (min-width: 1200px) {
+          .main-container {
+            max-width: 1000px;
+            padding-top: 100px;
+          }
+          h1 { font-size: 64px !important; }
+        }
+
+        @media (max-width: 600px) {
+          .main-container {
+            padding-top: 60px;
+          }
+          h1 { font-size: 36px !important; letter-spacing: 5px !important; }
+          .guess-grid {
+             grid-template-columns: 1.5fr 1fr 0.8fr 1fr 1fr !important;
+             gap: 4px !important;
+          }
+          .guess-item {
+             font-size: 9px !important;
+             min-height: 50px !important;
+          }
+          .menu-btn {
+            max-width: 100% !important;
+          }
         }
 
         .menu-btn { display: flex; align-items: center; gap: 16px; background: rgba(0,0,0,0.6); border: 1px solid #0891b2; border-radius: 12px; padding: 16px; cursor: pointer; transition: all 0.2s; width: 100%; max-width: 400px; margin: 0 auto 16px; backdrop-filter: blur(8px); }
@@ -556,6 +863,13 @@ export default function EurodlePage() {
         .nav-icon { width: 50px; height: 50px; border-radius: 50%; background: #111; border: 2px solid #0891b2; display: flex; align-items: center; justify-content: center; font-size: 24px; cursor: pointer; position: relative; z-index: 1; transition: 0.2s; }
         .nav-icon.active { border-color: #fbbf24; transform: scale(1.1); box-shadow: 0 0 15px rgba(251, 191, 36, 0.5); }
         .nav-icon:hover { transform: scale(1.1); }
+
+        .guess-grid {
+          display: grid;
+          grid-template-columns: 2fr 1fr 0.7fr 1fr 1fr;
+          gap: 6px;
+          margin-bottom: 6px;
+        }
       `}</style>
 
       <div style={{ position: "fixed", inset: 0, zIndex: 0, overflow: "hidden" }}>
@@ -565,6 +879,7 @@ export default function EurodlePage() {
 
       {showIconSelector && <IconSelector onSelect={updateIcon} onClose={() => setShowIconSelector(false)} />}
       {showCelebration && wonAtGuess && renderCelebration()}
+      {showPathCelebration && renderPathCelebration()}
 
       <div style={{ position: "absolute", top: 16, right: 16, zIndex: 100, display: "flex", gap: 12, alignItems: "center" }} onClick={e => e.stopPropagation()}>
         <CountdownTimer minimal={true} />
@@ -580,13 +895,29 @@ export default function EurodlePage() {
         </div>
       </div>
 
-      <main style={{ position: "relative", zIndex: 1, maxWidth: 740, margin: "0 auto", padding: "80px 16px 60px" }}>
+      <main className="main-container">
+
+        {!session?.user && activeMode !== "menu" && (
+          <div style={{ 
+            background: "rgba(249, 115, 22, 0.1)", 
+            border: "1px solid #f97316", 
+            borderRadius: 12, 
+            padding: "12px 16px", 
+            marginBottom: 20, 
+            textAlign: "center",
+            animation: "slideIn 0.4s ease"
+          }}>
+            <p style={{ color: "#f97316", fontSize: 14, fontWeight: "bold", margin: 0 }}>
+              ⚠️ PLAYING AS GUEST: <span style={{ fontWeight: "normal", color: "#fff" }}>Log in to save your points and climb the leaderboard!</span>
+            </p>
+          </div>
+        )}
 
         <div style={{ textAlign: "center", padding: "0 0 20px", cursor: activeMode !== "menu" ? "pointer" : "default" }} onClick={() => setActiveMode("menu")}>
           <div style={{ display: "inline-flex", alignItems: "center", gap: 12, marginBottom: 6 }}>
-            <span style={{ fontSize: 32 }}>🏀</span>
-            <h1 style={{ fontSize: 48, fontWeight: 900, letterSpacing: 10, fontFamily: "'Barlow Condensed', sans-serif", background: "linear-gradient(135deg, #fff 0%, #f97316 100%)", WebkitBackgroundClip: "text", WebkitTextFillColor: "transparent", margin: 0 }}>EURODLE</h1>
-            <span style={{ fontSize: 32 }}>🏀</span>
+            <span style={{ fontSize: "clamp(24px, 5vw, 32px)" }}>🏀</span>
+            <h1 style={{ fontSize: "clamp(32px, 8vw, 48px)", fontWeight: 900, letterSpacing: "clamp(5px, 2vw, 10px)", fontFamily: "'Barlow Condensed', sans-serif", background: "linear-gradient(135deg, #fff 0%, #f97316 100%)", WebkitBackgroundClip: "text", WebkitTextFillColor: "transparent", margin: 0 }}>EURODLE</h1>
+            <span style={{ fontSize: "clamp(24px, 5vw, 32px)" }}>🏀</span>
           </div>
           <p style={{ fontSize: 11, color: "rgba(255,255,255,0.4)", letterSpacing: 3, fontFamily: "'Barlow Condensed', sans-serif", textTransform: "uppercase" }}>
             {activeMode === "menu" ? "CHOOSE YOUR DAILY CHALLENGE" : "GUESS TODAY'S EUROLEAGUE PLAYER"}
@@ -608,7 +939,12 @@ export default function EurodlePage() {
                   <div style={{ position: "absolute", bottom: -6, right: -6, background: "#22c55e", borderRadius: "50%", width: 22, height: 22, display: "flex", alignItems: "center", justifyContent: "center", color: "white", fontSize: 14, fontWeight: "bold", border: "2px solid #0a1f0a" }}>✓</div>
                 )}
             </div>
-
+            <div className={`nav-icon ${activeMode === "player_id" ? "active" : ""}`} onClick={() => setActiveMode("player_id")} title="Player Path" style={{ borderColor: activeMode === "player_id" ? "#a855f7" : "#0891b2" }}>
+              <span style={{ color: activeMode === "player_id" ? "#a855f7" : "#0891b2" }}>🆔</span>
+              {pathHasPlayedToday && (
+                <div style={{ position: "absolute", bottom: -6, right: -6, background: "#22c55e", borderRadius: "50%", width: 22, height: 22, display: "flex", alignItems: "center", justifyContent: "center", color: "white", fontSize: 14, fontWeight: "bold", border: "2px solid #0a1f0a" }}>✓</div>
+              )}
+            </div>
             <div className="nav-icon" onClick={() => setActiveMode("menu")} title="Back to Menu" style={{ width: 40, height: 40, fontSize: 16 }}>
               🏠
             </div>
@@ -638,6 +974,18 @@ export default function EurodlePage() {
               <div>
                 <h2 style={{ margin: 0, fontSize: 24, fontFamily: "'Barlow Condensed', sans-serif", color: "#fff" }}>Higher or Lower</h2>
                 <p style={{ margin: 0, fontSize: 13, color: "#94a3b8" }}>Compare daily Euroleague stats</p>
+              </div>
+            </div>
+            <div className="menu-btn" style={{ borderColor: "#a855f7" }} onClick={() => setActiveMode("player_id")}>
+              <div className="menu-icon" style={{ borderColor: "#a855f7", color: "#a855f7", position: "relative" }}>
+                🆔
+                {pathHasPlayedToday && (
+                  <div style={{ position: "absolute", bottom: -4, right: -4, background: "#22c55e", borderRadius: "50%", width: 20, height: 20, display: "flex", alignItems: "center", justifyContent: "center", color: "white", fontSize: 12, fontWeight: "bold", border: "2px solid #111" }}>✓</div>
+                )}
+              </div>
+              <div>
+                <h2 style={{ margin: 0, fontSize: 24, fontFamily: "'Barlow Condensed', sans-serif", color: "#fff" }}>Player Path</h2>
+                <p style={{ margin: 0, fontSize: 13, color: "#94a3b8" }}>Guess the player from his career</p>
               </div>
             </div>
           </div>
@@ -687,27 +1035,27 @@ export default function EurodlePage() {
             </div>
 
             {guesses.length > 0 && (
-              <div style={{ display: "grid", gridTemplateColumns: "2fr 1fr 0.7fr 1fr 1fr", gap: 6, marginBottom: 6 }}>
+              <div className="guess-grid">
                 {["PLAYER", "TEAM", "POS", "NATION", "HEIGHT"].map(h => <div key={h} style={{ fontSize: 10, color: "rgba(255,255,255,0.3)", textAlign: "center", fontWeight: 700, letterSpacing: 1.5, fontFamily: "'Barlow Condensed', sans-serif" }}>{h}</div>)}
               </div>
             )}
 
             {[...guesses].reverse().map((g) => (
-              <div key={g.name} style={{ display: "grid", gridTemplateColumns: "2fr 1fr 0.7fr 1fr 1fr", gap: 6, marginBottom: 6, animation: "slideIn 0.4s ease both" }}>
+              <div key={g.name} className="guess-grid" style={{ animation: "slideIn 0.4s ease both" }}>
                 
-                {/* ΚΟΥΤΙ ΠΑΙΚΤΗ (Εδώ ήταν το λάθος που το έκανε να φαίνεται κενό!) */}
+                {/* ΚΟΥΤΙ ΠΑΙΚΤΗ */}
                 <div style={{ display: "flex", alignItems: "center", gap: 10, background: "rgba(0,0,0,0.5)", border: "1px solid rgba(255,255,255,0.1)", borderRadius: 8, padding: "8px 12px" }}>
-                  <div>
-                    <div style={{ fontSize: 13, fontWeight: 700, color: "#fff", fontFamily: "'Barlow Condensed', sans-serif" }}>{g.name}</div>
-                    <div style={{ fontSize: 10, color: "#94a3b8" }}>{g.team}</div>
+                  <div style={{ overflow: "hidden" }}>
+                    <div style={{ fontSize: 13, fontWeight: 700, color: "#fff", fontFamily: "'Barlow Condensed', sans-serif", whiteSpace: "nowrap", textOverflow: "ellipsis", overflow: "hidden" }}>{g.name}</div>
+                    <div style={{ fontSize: 10, color: "#94a3b8", whiteSpace: "nowrap", textOverflow: "ellipsis", overflow: "hidden" }}>{g.team}</div>
                   </div>
                 </div>
                 
                 {/* ΥΠΟΛΟΙΠΑ ΣΤΑΤΙΣΤΙΚΑ */}
-                <div style={{ background: colorBg(g.feedback.team), borderRadius: 8, display: "flex", alignItems: "center", justifyContent: "center", minHeight: 58, padding: 4, color: "#fff", fontSize: 10, fontWeight: 700, textAlign: "center" }}>{shortTeam(g.team)}</div>
-                <div style={{ background: colorBg(g.feedback.position), borderRadius: 8, display: "flex", alignItems: "center", justifyContent: "center", minHeight: 58, color: "#fff", fontSize: 10, fontWeight: 700 }}>{g.position}</div>
-                <div style={{ background: colorBg(g.feedback.nationality), borderRadius: 8, display: "flex", alignItems: "center", justifyContent: "center", minHeight: 58, color: "#fff", fontSize: 10, fontWeight: 700 }}>{g.nationality}</div>
-                <div style={{ background: colorBg(g.feedback.height), borderRadius: 8, display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center", minHeight: 58, color: "#fff", fontSize: 10, fontWeight: 700 }}>{g.height}cm {g.feedback.heightArrow === "up" ? "↑" : g.feedback.heightArrow === "down" ? "↓" : ""}</div>
+                <div className="guess-item" style={{ background: colorBg(g.feedback.team), borderRadius: 8, display: "flex", alignItems: "center", justifyContent: "center", minHeight: 58, padding: 4, color: "#fff", fontSize: 10, fontWeight: 700, textAlign: "center" }}>{shortTeam(g.team)}</div>
+                <div className="guess-item" style={{ background: colorBg(g.feedback.position), borderRadius: 8, display: "flex", alignItems: "center", justifyContent: "center", minHeight: 58, color: "#fff", fontSize: 10, fontWeight: 700 }}>{g.position}</div>
+                <div className="guess-item" style={{ background: colorBg(g.feedback.nationality), borderRadius: 8, display: "flex", alignItems: "center", justifyContent: "center", minHeight: 58, color: "#fff", fontSize: 10, fontWeight: 700 }}>{g.nationality}</div>
+                <div className="guess-item" style={{ background: colorBg(g.feedback.height), borderRadius: 8, display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center", minHeight: 58, color: "#fff", fontSize: 10, fontWeight: 700 }}>{g.height}cm {g.feedback.heightArrow === "up" ? "↑" : g.feedback.heightArrow === "down" ? "↓" : ""}</div>
               </div>
             ))} 
 
@@ -850,6 +1198,178 @@ export default function EurodlePage() {
                     <p style={{ color: "#fff", marginBottom: 15 }}>Final Score: <span style={{ fontWeight: "bold", fontSize: 20 }}>{hlScore}</span></p>
                   </div>
                 )}
+              </div>
+            )}
+          </div>
+        )}
+        {activeMode === "player_id" && (
+          <div style={{ animation: "fadeIn 0.3s ease", marginTop: 20 }}>
+            <div style={{ textAlign: "center", marginBottom: 30 }}>
+              <div style={{ fontSize: 40, marginBottom: 10 }}>🆔</div>
+              <h2 style={{ fontSize: 32, fontFamily: "'Barlow Condensed', sans-serif", color: "#a855f7", margin: 0 }}>PLAYER PATH</h2>
+              <p style={{ color: "#94a3b8" }}>Guess the player from his career timeline!</p>
+            </div>
+
+            {!pathPlayer ? (
+              <div style={{ textAlign: "center", color: "#a855f7" }}>Loading career data...</div>
+            ) : (
+              <div style={{ display: "flex", flexDirection: "column", gap: 20 }}>
+                
+                {/* --- 1. CAREER PATH (Η Διαδρομή) --- */}
+                <div style={{ background: "rgba(0,0,0,0.6)", border: "1px solid rgba(168, 85, 247, 0.4)", borderRadius: 16, padding: "24px 20px" }}>
+                  <h3 style={{ color: "#a855f7", fontFamily: "'Barlow Condensed', sans-serif", marginBottom: 20, fontSize: 20, letterSpacing: 1, textTransform: "uppercase", textAlign: "center" }}>Career Timeline</h3>
+                  <div style={{ display: "flex", flexDirection: "column", gap: 10 }}>
+                    {pathPlayer.career.map((step: any, index: number) => (
+                      <div key={index} style={{ display: "flex", alignItems: "center", gap: 15 }}>
+                        <div style={{ minWidth: 60, fontSize: 13, color: "#94a3b8", fontWeight: "bold", textAlign: "right" }}>{step.years}</div>
+                        <div style={{ width: 12, height: 12, borderRadius: "50%", background: "#a855f7", position: "relative", zIndex: 2, boxShadow: "0 0 10px #a855f7" }}></div>
+                        <div style={{ flex: 1, background: "rgba(168, 85, 247, 0.1)", border: "1px solid rgba(168, 85, 247, 0.3)", padding: "10px 15px", borderRadius: 10, fontSize: 16, fontWeight: "bold", color: "#fff" }}>
+                          {step.team}
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+
+                {/* --- 2. HINTS (Ξεκλειδώνουν σταδιακά) --- */}
+                <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr 1fr", gap: 12 }}>
+                  {[
+                    { icon: "👕", label: "Jersey #", value: pathPlayer.hints.jersey, threshold: 3, color: "#0ea5e9" },
+                    { icon: "🏀", label: "Position", value: pathPlayer.hints.position, threshold: 6, color: "#10b981" },
+                    { icon: "🌍", label: "Nationality", value: pathPlayer.hints.nationality, threshold: 9, color: "#f59e0b" }
+                  ].map((hint, i) => {
+                    const isAvailable = pathGuesses.length >= hint.threshold;
+                    const isUnlocked = pathUnlockedHints.includes(i) || pathGameOver;
+
+                    return (
+                      <div 
+                        key={i} 
+                        onClick={() => isAvailable && !isUnlocked && handleUnlockHint(i)}
+                        style={{ 
+                          background: isUnlocked ? "rgba(255,255,255,0.05)" : isAvailable ? "rgba(168, 85, 247, 0.1)" : "rgba(255,255,255,0.02)", 
+                          padding: "15px 10px", 
+                          borderRadius: 16, 
+                          textAlign: "center", 
+                          border: isUnlocked ? `1px solid ${hint.color}` : isAvailable ? "1px solid #a855f7" : "1px dashed rgba(255,255,255,0.1)",
+                          cursor: isAvailable && !isUnlocked ? "pointer" : "default",
+                          transition: "all 0.3s ease",
+                          position: "relative",
+                          overflow: "hidden"
+                        }}
+                      >
+                        <div style={{ fontSize: 24, marginBottom: 8, filter: isUnlocked ? "none" : "grayscale(1) opacity(0.5)" }}>{hint.icon}</div>
+                        
+                        {isUnlocked ? (
+                          <div style={{ animation: "fadeIn 0.5s ease" }}>
+                            <div style={{ fontSize: 10, color: hint.color, textTransform: "uppercase", fontWeight: "bold", marginBottom: 2 }}>{hint.label}</div>
+                            <div style={{ fontSize: 15, color: "#fff", fontWeight: 900, fontFamily: "'Barlow Condensed', sans-serif" }}>{hint.value}</div>
+                          </div>
+                        ) : isAvailable ? (
+                          <div style={{ animation: "pulse 2s infinite" }}>
+                            <div style={{ fontSize: 12, color: "#a855f7", fontWeight: "bold" }}>CLICK TO</div>
+                            <div style={{ fontSize: 12, color: "#a855f7", fontWeight: "bold" }}>UNLOCK 🔓</div>
+                          </div>
+                        ) : (
+                          <div>
+                            <div style={{ fontSize: 10, color: "#64748b", textTransform: "uppercase" }}>Locked</div>
+                            <div style={{ fontSize: 10, color: "#64748b" }}>{hint.threshold} errors</div>
+                          </div>
+                        )}
+                        
+                        {/* Shimmer effect for available hints */}
+                        {isAvailable && !isUnlocked && (
+                          <div style={{
+                            position: "absolute",
+                            top: 0, left: "-100%",
+                            width: "50%", height: "100%",
+                            background: "linear-gradient(90deg, transparent, rgba(168, 85, 247, 0.2), transparent)",
+                            animation: "shimmer 2s infinite",
+                            transform: "skewX(-20deg)"
+                          }} />
+                        )}
+                      </div>
+                    );
+                  })}
+                </div>
+
+                {/* --- 3. SEARCH BAR Ή GAME OVER SCREEN --- */}
+                {!pathGameOver ? (
+                  <div style={{ position: "relative", zIndex: 10 }}>
+                    <div style={{ display: "flex", justifyContent: "space-between", marginBottom: 8, fontSize: 12, color: "#94a3b8", fontWeight: "bold" }}>
+                      <span>ATTEMPT {pathGuesses.length + 1} OF 10</span>
+                      {pathGuesses.length >= 9 && (
+                        <button 
+                          onClick={() => {
+                            setPathGameOver(true); setPathWon(false); setPathHasPlayedToday(true);
+                            const todayStr = new Intl.DateTimeFormat('en-CA', { timeZone: 'Europe/Athens' }).format(new Date());
+                            localStorage.setItem("eurodle_path_state", JSON.stringify({ date: todayStr, gameOver: true, won: false, guesses: pathGuesses, player: pathPlayer, unlockedHints: pathUnlockedHints }));
+                          }} 
+                          style={{ background: "none", border: "none", color: "#ef4444", cursor: "pointer", textDecoration: "underline", fontSize: 12 }}
+                        >
+                          Give Up 🏳️
+                        </button>
+                      )}
+                    </div>
+                    
+                    <div style={{ display: "flex", gap: 10, alignItems: "center", background: "rgba(0,0,0,0.6)", border: "1px solid #a855f7", borderRadius: 14, padding: "10px 10px 10px 16px" }}>
+                      <span style={{ fontSize: 16, opacity: 0.5 }}>🔍</span>
+                      <input 
+                        ref={pathInputRef}
+                        type="text" 
+                        value={pathQuery} 
+                        onChange={e => handlePathQueryChange(e.target.value)} 
+                        onKeyDown={handlePathKeyDown}
+                        placeholder="Type a player name..." 
+                        style={{ flex: 1, background: "transparent", fontSize: 15, color: "#f1f5f9", fontFamily: "'Barlow', sans-serif", border: "none", outline: "none" }} 
+                      />
+                      <button onClick={handlePathGuess} disabled={!pathSelected && pathSuggestions.length === 0} style={{ padding: "10px 24px", borderRadius: 10, fontSize: 14, fontWeight: 800, background: (pathSelected || pathSuggestions.length > 0) ? "#a855f7" : "rgba(255,255,255,0.08)", color: (pathSelected || pathSuggestions.length > 0) ? "#fff" : "#374151", border: "none", cursor: (pathSelected || pathSuggestions.length > 0) ? "pointer" : "default" }}>GUESS</button>
+                    </div>
+
+                    {pathSuggestions.length > 0 && (
+                      <div style={{ position: "absolute", top: "calc(100% + 6px)", left: 0, right: 0, background: "rgba(5,10,20,0.98)", border: "1px solid #a855f7", borderRadius: 12, zIndex: 100, overflow: "hidden" }}>
+                        {pathSuggestions.map((p, i) => (
+                          <div key={p.playerId} onClick={() => { setPathSelected(p); setPathQuery(p.name); setPathSuggestions([]); pathInputRef.current?.focus(); }} style={{ display: "flex", alignItems: "center", gap: 12, padding: "11px 16px", cursor: "pointer", background: i === 0 ? "rgba(168, 85, 247, 0.15)" : "transparent", borderBottom: "1px solid rgba(255,255,255,0.05)" }}>
+                            <div style={{ width: 36, height: 36, borderRadius: 8, background: "#a855f7", display: "flex", alignItems: "center", justifyContent: "center", fontSize: 12, fontWeight: 800, color: "#fff" }}>{p.position}</div>
+                            <div>
+                              <div style={{ fontSize: 14, fontWeight: 600, color: "#f1f5f9" }}>
+                                {p.name} {i === 0 && <span style={{ fontSize: 10, color: "#a855f7", marginLeft: 6 }}>(Press Enter)</span>}
+                              </div>
+                              <div style={{ fontSize: 11, color: "#64748b" }}>{p.team}</div>
+                            </div>
+                          </div>
+                        ))}
+                      </div>
+                    )}
+                  </div>
+                ) : (
+                  <div style={{ background: pathWon ? "rgba(34, 197, 94, 0.1)" : "rgba(239, 68, 68, 0.1)", border: pathWon ? "1px solid #22c55e" : "1px solid #ef4444", borderRadius: 16, padding: "20px", textAlign: "center", animation: "slideIn 0.4s ease" }}>
+                    <h3 style={{ fontSize: 28, color: pathWon ? "#22c55e" : "#ef4444", fontFamily: "'Barlow Condensed', sans-serif", margin: "0 0 10px 0" }}>
+                      {pathWon ? "CORRECT! 🎉" : "GAME OVER"}
+                    </h3>
+                    {pathWon && (
+                      <div style={{ fontSize: 18, color: "#fbbf24", fontWeight: "bold", marginBottom: 15 }}>
+                        YOU SCORED +{pathPoints} PTS
+                      </div>
+                    )}
+                    <p style={{ color: "#fff", fontSize: 16 }}>The player was:</p>
+                    <div style={{ fontSize: 32, fontWeight: 900, color: "#fff", fontFamily: "'Barlow Condensed', sans-serif", marginTop: 5, letterSpacing: 1, marginBottom: 25 }}>{pathPlayer.name}</div>
+                    
+                    <p style={{ color: "#94a3b8", fontSize: 14, marginBottom: 10 }}>Next player in:</p>
+                    <CountdownTimer />
+                  </div>
+                )}
+
+                {/* --- 4. ΛΑΘΟΣ ΜΑΝΤΕΨΙΕΣ --- */}
+                {pathGuesses.length > 0 && !pathWon && (
+                  <div style={{ display: "flex", flexWrap: "wrap", gap: 8 }}>
+                    {pathGuesses.map((guess, idx) => (
+                      <span key={idx} style={{ background: "rgba(239, 68, 68, 0.2)", border: "1px solid #ef4444", color: "#f87171", padding: "4px 10px", borderRadius: 8, fontSize: 12, fontWeight: "bold" }}>
+                        ❌ {guess}
+                      </span>
+                    ))}
+                  </div>
+                )}
+
               </div>
             )}
           </div>
