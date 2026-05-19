@@ -52,12 +52,10 @@ export async function getDailyPlayerPath() {
 export async function getDailyPlayer(): Promise<IPlayer> {
   await connectDB();
 
-  // Fetch all active player IDs (lightweight)
-  const players = await Player.find({ active: true })
-    .select("_id playerId name")
-    .lean();
+  // Fetch all active players (we need full data anyway)
+  const players = await Player.find({ active: true }).lean();
 
-  if (players.length === 0) throw new Error("No active players in DB");
+  if (!players || players.length === 0) throw new Error("No active players in DB");
 
   // Deterministic seed: days since epoch
   const now = new Date();
@@ -79,8 +77,9 @@ export async function getDailyPlayer(): Promise<IPlayer> {
   }
 
   const chosen = arr[daysSinceEpoch % arr.length];
-  const full = await Player.findById(chosen._id).lean() as IPlayer;
-  return full;
+  if (!chosen) throw new Error("Could not pick a daily player");
+
+  return chosen as unknown as IPlayer;
 }
 
 /**
