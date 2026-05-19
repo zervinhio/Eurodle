@@ -1047,8 +1047,12 @@ const PLAYERS_TO_INSERT = [
   }
 ];
 
-export async function GET() {
+export async function GET(req: Request) {
   try {
+    const { searchParams } = new URL(req.url);
+    if (process.env.NODE_ENV === "production" && searchParams.get("key") !== process.env.ADMIN_KEY) {
+      return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+    }
     const MONGODB_URI = process.env.MONGODB_URI;
     if (!MONGODB_URI) return NextResponse.json({ error: "No MongoDB URI" }, { status: 500 });
 
