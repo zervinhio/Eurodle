@@ -121,7 +121,7 @@ function ProfilePopup({ session, localStreak, localScore, currentIcon, onLogout,
       <div style={{ display: "flex", alignItems: "center", gap: 15, borderBottom: "1px solid rgba(255,255,255,0.1)", paddingBottom: 20, marginBottom: 20 }}>
         <div onClick={onChangeIcon} style={{ position: "relative", cursor: "pointer" }} title="Change Icon">
           <img src={currentIcon} alt="Profile" style={{ width: 54, height: 54, borderRadius: "50%", border: "2px solid #f97316", objectFit: "cover", backgroundColor: "#475569" }} />
-          <div style={{ position: "absolute", bottom: -2, right: -2, background: "#f97316", borderRadius: "50%", width: 18, height: 18, display: "flex", alignItems: "center", justifyContent: "center", fontSize: 10, border: "2px solid #111" }}>✏️</div>
+          <div style={{ position: "absolute", bottom: -2, right: -2, background: "#fff", borderRadius: "50%", width: 20, height: 20, display: "flex", alignItems: "center", justifyContent: "center", fontSize: 10, border: "2px solid #f97316", boxShadow: "0 2px 4px rgba(0,0,0,0.3)" }}>✏️</div>
         </div>
         <div>
           <div style={{ fontSize: 18, fontWeight: 800, fontFamily: "'Barlow Condensed', sans-serif", color: "#fff", textTransform: "uppercase" }}>{session?.user?.name || "GUEST"}</div>
@@ -649,7 +649,21 @@ export default function EurodlePage() {
     await signOut({ callbackUrl: '/game' });
   };
 
-  const updateIcon = (url: string) => { setCustomIcon(url); localStorage.setItem(ICON_STORAGE_KEY, url); };
+  const updateIcon = async (url: string) => { 
+    setCustomIcon(url); 
+    localStorage.setItem(ICON_STORAGE_KEY, url); 
+    if (session?.user) {
+      try {
+        await fetch("/api/update-icon", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ imageUrl: url })
+        });
+      } catch (err) {
+        console.error("Failed to update icon in DB:", err);
+      }
+    }
+  };
 
   const points = wonAtGuess ? getPoints(wonAtGuess) : 0;
   const winningImage = won && guesses.length > 0 ? guesses[guesses.length - 1].imageUrl : "";
@@ -693,9 +707,6 @@ export default function EurodlePage() {
         <div style={{ background: "linear-gradient(135deg, #1a2a1a, #0a1a0a)", border: "2px solid #f97316", borderRadius: 24, padding: "40px 30px", textAlign: "center", maxWidth: 380, width: "90%", position: "relative" }} onClick={e => e.stopPropagation()}>
           {confettiPieces}
           <div style={{ position: 'relative', zIndex: 10 }}>
-            <div style={{ width: 140, height: 140, margin: "0 auto 16px", borderRadius: "50%", border: "4px solid #f97316", overflow: "hidden", background: "#fff" }}>
-              <img src={winningImage || "https://via.placeholder.com/140"} alt="Player" style={{ width: "100%", height: "100%", objectFit: "cover", objectPosition: "top", backgroundColor: "#475569" }} />
-            </div>
             <div style={{ fontSize: 24, fontWeight: 900, color: "#f97316", fontFamily: "'Barlow Condensed', sans-serif", marginBottom: 4 }}>{title}</div>
             <p style={{ fontSize: 15, color: "#fff", marginBottom: 20, fontStyle: "italic" }}>"{subText}"</p>
             <div style={{ display: "flex", justifyContent: "center", gap: 25, marginBottom: 25, background: "rgba(255,255,255,0.05)", padding: "15px", borderRadius: "16px" }}>

@@ -79,9 +79,9 @@ export default function LeaderboardPage() {
                       {rank <= 3 ? medal : `#${rank}`}
                     </div>
                     {player.image ? (
-                      <img src={player.image} alt={player.name} style={{ width: 40, height: 40, borderRadius: "50%", border: rank <= 3 ? border : "none" }} />
+                      <img src={player.image} alt={player.name} style={{ width: 40, height: 40, borderRadius: "50%", border: rank <= 3 ? border : "2px solid rgba(255,255,255,0.1)", objectFit: "cover" }} />
                     ) : (
-                      <div style={{ width: 40, height: 40, borderRadius: "50%", background: "#333", display: "flex", alignItems: "center", justifyContent: "center", fontSize: 20 }}>👤</div>
+                      <img src="https://cdn-icons-png.flaticon.com/512/3501/3501007.png" alt="Guest" style={{ width: 40, height: 40, borderRadius: "50%", border: "2px solid rgba(255,255,255,0.1)", objectFit: "cover" }} />
                     )}
                     <div style={{ fontWeight: 700, color: "#fff", fontSize: 16 }}>{player.name}</div>
                   </div>
