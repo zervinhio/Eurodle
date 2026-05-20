@@ -25,7 +25,12 @@ const handler = NextAuth({
       await connectDB();
       const existingUser = await User.findOne({ email: user.email });
 
-      if (!existingUser) {
+      if (existingUser) {
+        // Αν υπάρχει ήδη ο χρήστης αλλά συνδέεται με άλλο provider (π.χ. είχε Google και τώρα μπαίνει με Discord)
+        // Σημείωση: Στο τωρινό schema δεν αποθηκεύουμε τον provider, οπότε το account linking γίνεται αυτόματα.
+        // Αν θέλουμε να τον ενημερώσουμε, μπορούμε να περάσουμε ένα flag στο URL.
+        return true;
+      } else {
         await User.create({
           name: user.name,
           email: user.email,

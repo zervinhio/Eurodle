@@ -126,6 +126,11 @@ function ProfilePopup({ session, localStreak, localScore, currentIcon, onLogout,
         <div>
           <div style={{ fontSize: 18, fontWeight: 800, fontFamily: "'Barlow Condensed', sans-serif", color: "#fff", textTransform: "uppercase" }}>{session?.user?.name || "GUEST"}</div>
           <div style={{ fontSize: 11, color: "rgba(255,255,255,0.5)" }}>{session?.user?.email || "Local Progress Only"}</div>
+          {session?.user && (
+            <div style={{ fontSize: 9, color: "#16a34a", marginTop: 4, fontWeight: 700, textTransform: "uppercase", letterSpacing: 0.5 }}>
+              ✓ Account Linked & Secured
+            </div>
+          )}
         </div>
       </div>
       <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 12, marginBottom: 24 }}>
