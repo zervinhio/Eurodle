@@ -359,6 +359,7 @@ export default function EurodlePage() {
         setPathUnlockedHints(savedPath.unlockedHints ?? []);
         setPathPoints(savedPath.points ?? 0);
         setPathGameOver(true);
+        setShowPathCelebration(true); // <--- ΕΜΦΑΝΙΣΗ POPUP
       } else if (savedPath.date === todayStr) {
         // Αν δεν έχει τελειώσει αλλά έχει ξεκινήσει
         setPathGuesses(savedPath.guesses ?? []);
@@ -431,6 +432,7 @@ export default function EurodlePage() {
         const saved = JSON.parse(raw);
         if (saved.date === date) {
           setGuesses(saved.guesses ?? []); setWon(saved.won ?? false); setGameOver(saved.gameOver ?? false); setWonAtGuess(saved.wonAtGuess ?? null);
+          if (saved.won) setShowCelebration(true); // <--- ΕΜΦΑΝΙΣΗ POPUP
         }
       }
     }).catch(() => { });
@@ -451,6 +453,7 @@ export default function EurodlePage() {
         setHlScore(savedHL.score ?? 0);
         if (savedHL.stat) setHlStat(savedHL.stat); // <--- Διαβάζει την κατηγορία
         setHlGameOver(true);
+        setShowHLCelebration(true); // <--- ΕΜΦΑΝΙΣΗ POPUP
       }
     }
   }, []);

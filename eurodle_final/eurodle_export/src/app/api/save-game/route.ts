@@ -76,7 +76,11 @@ export async function POST(req: Request) {
         await dailyStat.save();
       }
     } else if (mode === 'player_id') {
+      if (user.lastPlayedPath === todayAthens) {
+        return NextResponse.json({ error: "Already played Path today", score: user.score }, { status: 400 });
+      }
       user.score = (user.score || 0) + calculatedPoints;
+      user.lastPlayedPath = todayAthens;
     }
 
     await user.save();
