@@ -17,8 +17,8 @@ const PLAYER_ICONS = [
 ];
 
 const DEFAULT_GUEST_ICON = "https://cdn-icons-png.flaticon.com/512/3501/3501007.png";
-const ICON_STORAGE_KEY = "eurodle_custom_icon";
-const STORAGE_KEY = "eurodle_state_v5";
+const ICON_STORAGE_KEY_BASE = "eurodle_custom_icon";
+const STORAGE_KEY_BASE = "eurodle_state_v5";
 
 type Color = "green" | "yellow" | "red";
 type GameMode = "menu" | "classic" | "higher_lower" | "player_id";
@@ -180,6 +180,35 @@ export default function EurodlePage() {
   const [customIcon, setCustomIcon] = useState("");
   const [globalAverage, setGlobalAverage] = useState<string | null>(null);
 
+  // --- Dynamic Storage Keys ---
+  const userEmail = session?.user?.email || "guest";
+  const USER_STORAGE_KEY = `${STORAGE_KEY_BASE}_${userEmail}`;
+  const USER_PATH_KEY = `eurodle_path_state_${userEmail}`;
+  const USER_HL_KEY = `eurodle_hl_state_${userEmail}`;
+  const USER_ICON_KEY = `${ICON_STORAGE_KEY_BASE}_${userEmail}`;
+
+  // Reset state when user changes
+  useEffect(() => {
+    // Reset all game states to default before loading new ones
+    setGuesses([]); setWon(false); setGameOver(false); setWonAtGuess(null);
+    setPathGuesses([]); setPathGameOver(false); setPathWon(false); setPathPoints(0); setPathHasPlayedToday(false); setPathUnlockedHints([]);
+    setHlScore(0); setHlGameOver(false); setHlGameStarted(false); setHlHasPlayedToday(false);
+    
+    // Load User Icon
+    const savedIcon = localStorage.getItem(USER_ICON_KEY);
+    if (savedIcon) setCustomIcon(savedIcon);
+    else setCustomIcon("");
+
+    // Load Scores/Streaks
+    if (session?.user) {
+      setLocalStreak((session.user as any).streak || 0);
+      setLocalScore((session.user as any).score || 0);
+    } else {
+      setLocalStreak(0);
+      setLocalScore(0);
+    }
+  }, [userEmail, session]);
+
   const searchTimeout = useRef<HTMLInputElement>(null);
   const inputRef = useRef<HTMLInputElement>(null);
   // --- Higher/Lower States ---
@@ -256,7 +285,7 @@ export default function EurodlePage() {
         const todayStr = new Intl.DateTimeFormat('en-CA', { timeZone: 'Europe/Athens' }).format(new Date());
         
         // Κλειδώνει τοπικά
-        localStorage.setItem("eurodle_hl_state", JSON.stringify({ 
+        localStorage.setItem(USER_HL_KEY, JSON.stringify({ 
           date: todayStr, 
           score: hlScore, 
           gameOver: true, 
@@ -295,10 +324,6 @@ export default function EurodlePage() {
   };
   // Initialize Data
   useEffect(() => {
-    const savedIcon = localStorage.getItem(ICON_STORAGE_KEY);
-    if (savedIcon) setCustomIcon(savedIcon);
-  }, []);
-  useEffect(() => {
     if (activeMode === "player_id" && !pathPlayer) {
       fetch("/api/player-id")
         .then(res => res.json())
@@ -309,7 +334,7 @@ export default function EurodlePage() {
 
   useEffect(() => {
     const todayStr = new Intl.DateTimeFormat('en-CA', { timeZone: 'Europe/Athens' }).format(new Date());
-    const rawPath = localStorage.getItem("eurodle_path_state");
+    const rawPath = localStorage.getItem(USER_PATH_KEY);
 
     // Clean up sync flags if it's a new day
     const lastSyncDate = localStorage.getItem("eurodle_last_sync_date");
@@ -336,7 +361,7 @@ export default function EurodlePage() {
         setPathPlayer(savedPath.player ?? null);
       } else {
         // Παλιά ημερομηνία - καθαρισμός για την επόμενη μέρα
-        localStorage.removeItem("eurodle_path_state");
+        localStorage.removeItem(USER_PATH_KEY);
       }
     }
   }, []);
@@ -350,7 +375,7 @@ export default function EurodlePage() {
       const todayStr = new Intl.DateTimeFormat('en-CA', { timeZone: 'Europe/Athens' }).format(new Date());
 
       // 1. Sync Classic Mode
-      const rawClassic = localStorage.getItem(STORAGE_KEY);
+      const rawClassic = localStorage.getItem(USER_STORAGE_KEY);
       if (rawClassic) {
         const saved = JSON.parse(rawClassic);
         if (saved.date === todayStr && saved.won && !localStorage.getItem("eurodle_classic_synced")) {
@@ -372,7 +397,7 @@ export default function EurodlePage() {
       }
 
       // 2. Sync Player ID (Path) Mode
-      const rawPath = localStorage.getItem("eurodle_path_state");
+      const rawPath = localStorage.getItem(USER_PATH_KEY);
       if (rawPath) {
         const savedPath = JSON.parse(rawPath);
         if (savedPath.date === todayStr && savedPath.won && !localStorage.getItem("eurodle_path_synced")) {
@@ -396,7 +421,7 @@ export default function EurodlePage() {
   useEffect(() => {
     fetch("/api/daily").then(r => r.json()).then(({ date }) => {
       setTodayDate(date);
-      const raw = localStorage.getItem(STORAGE_KEY);
+      const raw = localStorage.getItem(USER_STORAGE_KEY);
       if (raw) {
         const saved = JSON.parse(raw);
         if (saved.date === date) {
@@ -408,12 +433,12 @@ export default function EurodlePage() {
 
   useEffect(() => {
     if (!todayDate) return;
-    localStorage.setItem(STORAGE_KEY, JSON.stringify({ date: todayDate, guesses, won, gameOver, wonAtGuess }));
+    localStorage.setItem(USER_STORAGE_KEY, JSON.stringify({ date: todayDate, guesses, won, gameOver, wonAtGuess }));
   }, [guesses, won, gameOver, todayDate, wonAtGuess]);
 
   useEffect(() => {
     const todayStr = new Intl.DateTimeFormat('en-CA', { timeZone: 'Europe/Athens' }).format(new Date());
-    const rawHL = localStorage.getItem("eurodle_hl_state");
+    const rawHL = localStorage.getItem(USER_HL_KEY);
     if (rawHL) {
       const savedHL = JSON.parse(rawHL);
       if (savedHL.date === todayStr && savedHL.gameOver) {
@@ -542,12 +567,12 @@ export default function EurodlePage() {
         }
       }
 
-      localStorage.setItem("eurodle_path_state", JSON.stringify({
+      localStorage.setItem(USER_PATH_KEY, JSON.stringify({
         date: todayStr, gameOver: true, won: isCorrect, guesses: newGuesses, player: pathPlayer, unlockedHints: pathUnlockedHints, points: earnedPoints
       }));
     } else {
       // Σώζουμε την κατάσταση ακόμα και αν δεν τελείωσε για να μην χάνονται τα hints/μαντεψιές
-      localStorage.setItem("eurodle_path_state", JSON.stringify({
+      localStorage.setItem(USER_PATH_KEY, JSON.stringify({
         date: todayStr, gameOver: false, won: false, guesses: newGuesses, player: pathPlayer, unlockedHints: pathUnlockedHints
       }));
       // Αν συνεχίζεται το παιχνίδι, ξαναβάζει αυτόματα τον κέρσορα στο Search Bar!
@@ -562,7 +587,7 @@ export default function EurodlePage() {
     setPathUnlockedHints(newUnlocked);
     
     const todayStr = new Intl.DateTimeFormat('en-CA', { timeZone: 'Europe/Athens' }).format(new Date());
-    localStorage.setItem("eurodle_path_state", JSON.stringify({
+    localStorage.setItem(USER_PATH_KEY, JSON.stringify({
       date: todayStr, gameOver: pathGameOver, won: pathWon, guesses: pathGuesses, player: pathPlayer, unlockedHints: newUnlocked
     }));
   };
@@ -644,14 +669,14 @@ export default function EurodlePage() {
   };
 
   const handleLogout = async () => {
-    localStorage.removeItem(STORAGE_KEY); localStorage.removeItem("temp_score"); localStorage.removeItem("temp_streak");
+    localStorage.removeItem(USER_STORAGE_KEY); localStorage.removeItem("temp_score"); localStorage.removeItem("temp_streak");
     setGuesses([]); setWon(false); setGameOver(false); setWonAtGuess(null);
     await signOut({ callbackUrl: '/game' });
   };
 
   const updateIcon = async (url: string) => { 
     setCustomIcon(url); 
-    localStorage.setItem(ICON_STORAGE_KEY, url); 
+    localStorage.setItem(USER_ICON_KEY, url); 
     if (session?.user) {
       try {
         await fetch("/api/update-icon", {
@@ -1313,7 +1338,7 @@ export default function EurodlePage() {
                           onClick={() => {
                             setPathGameOver(true); setPathWon(false); setPathHasPlayedToday(true);
                             const todayStr = new Intl.DateTimeFormat('en-CA', { timeZone: 'Europe/Athens' }).format(new Date());
-                            localStorage.setItem("eurodle_path_state", JSON.stringify({ date: todayStr, gameOver: true, won: false, guesses: pathGuesses, player: pathPlayer, unlockedHints: pathUnlockedHints }));
+                            localStorage.setItem(USER_PATH_KEY, JSON.stringify({ date: todayStr, gameOver: true, won: false, guesses: pathGuesses, player: pathPlayer, unlockedHints: pathUnlockedHints }));
                           }} 
                           style={{ background: "none", border: "none", color: "#ef4444", cursor: "pointer", textDecoration: "underline", fontSize: 12 }}
                         >
