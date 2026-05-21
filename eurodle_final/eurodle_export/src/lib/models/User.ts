@@ -12,7 +12,12 @@ const UserSchema = new mongoose.Schema({
   // --- ΝΕΑ ΠΕΔΙΑ ΓΙΑ HIGHER/LOWER ---
   lastPlayedHL: { type: String }, // Θα αποθηκεύει String (π.χ. "12/05/2026") με ώρα Ελλάδος
   lastPlayedPath: { type: String }, // Πότε έπαιξε το Path mode
-  bestHlScore: { type: Number, default: 0 } // Το μεγαλύτερο σερί που έχει κάνει στο Higher/Lower
+  bestHlScore: { type: Number, default: 0 }, // Το μεγαλύτερο σερί που έχει κάνει στο Higher/Lower
+
+  // --- ΑΠΟΘΗΚΕΥΣΗ ΣΚΟΡ ΗΜΕΡΑΣ ---
+  lastClassicGuesses: { type: Number, default: 0 },
+  lastPathPoints: { type: Number, default: 0 },
+  lastHLPoints: { type: Number, default: 0 }
 }, { timestamps: true });
 
 const User = mongoose.models.User || mongoose.model('User', UserSchema);

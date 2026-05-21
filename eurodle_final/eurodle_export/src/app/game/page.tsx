@@ -216,17 +216,22 @@ export default function EurodlePage() {
       if (u.playedClassic) {
         setGameOver(true);
         setWon(true);
+        if (u.lastClassicGuesses) setWonAtGuess(u.lastClassicGuesses);
         // setShowCelebration(true); <-- ΑΦΑΙΡΕΣΗ
       }
       if (u.playedHL) {
         setHlHasPlayedToday(true);
         setHlGameOver(true);
+        // Χρησιμοποιούμε τους πόντους αν υπάρχουν για να μην δείχνει 0
+        // Στο HL οearnedPoints υπολογίζεται από το hlScore * 5
+        if (u.lastHLPoints) setHlScore(u.lastHLPoints / 5); 
         // setShowHLCelebration(true); <-- ΑΦΑΙΡΕΣΗ
       }
       if (u.playedPath) {
         setPathHasPlayedToday(true);
         setPathGameOver(true);
         setPathWon(true);
+        if (u.lastPathPoints) setPathPoints(u.lastPathPoints);
         // setShowPathCelebration(true); <-- ΑΦΑΙΡΕΣΗ
       }
     } else {

@@ -68,6 +68,7 @@ export async function POST(req: Request) {
       user.score = (user.score || 0) + calculatedPoints;
       user.streak = newStreak;
       user.lastPlayed = now;
+      user.lastClassicGuesses = guessesCount;
       if (user.streak > (user.maxStreak || 0)) user.maxStreak = user.streak;
 
       if (guessesCount) {
@@ -81,6 +82,7 @@ export async function POST(req: Request) {
       }
       user.score = (user.score || 0) + calculatedPoints;
       user.lastPlayedPath = todayAthens;
+      user.lastPathPoints = calculatedPoints;
     }
 
     await user.save();

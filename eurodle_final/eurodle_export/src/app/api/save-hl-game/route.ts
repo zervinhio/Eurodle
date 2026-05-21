@@ -38,6 +38,7 @@ export async function POST(req: Request) {
     // Ενημέρωση του χρήστη
     user.lastPlayedHL = todayGreek; // Τον "κλειδώνουμε" για σήμερα
     user.score += calculatedPoints;      // Του δίνουμε τους πόντους
+    user.lastHLPoints = calculatedPoints; 
     
     // Αν έκανε νέο ρεκόρ, το αποθηκεύουμε
     if (finalScore > user.bestHlScore) {
