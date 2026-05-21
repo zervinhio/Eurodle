@@ -212,21 +212,22 @@ export default function EurodlePage() {
 
       // --- SERVER-SIDE LOCKDOWN ---
       // Αν ο server λέει ότι έχουμε παίξει, κλειδώνουμε τα modes αμέσως
+      // ΑΛΛΑ: Δεν δείχνουμε τα popups αυτόματα στο refresh (setShowCelebration(false))
       if (u.playedClassic) {
         setGameOver(true);
         setWon(true);
-        setShowCelebration(true);
+        // setShowCelebration(true); <-- ΑΦΑΙΡΕΣΗ
       }
       if (u.playedHL) {
         setHlHasPlayedToday(true);
         setHlGameOver(true);
-        setShowHLCelebration(true);
+        // setShowHLCelebration(true); <-- ΑΦΑΙΡΕΣΗ
       }
       if (u.playedPath) {
         setPathHasPlayedToday(true);
         setPathGameOver(true);
         setPathWon(true);
-        setShowPathCelebration(true);
+        // setShowPathCelebration(true); <-- ΑΦΑΙΡΕΣΗ
       }
     } else {
       setLocalStreak(0);
@@ -379,7 +380,7 @@ export default function EurodlePage() {
         setPathUnlockedHints(savedPath.unlockedHints ?? []);
         setPathPoints(savedPath.points ?? 0);
         setPathGameOver(true);
-        setShowPathCelebration(true); // <--- ΕΜΦΑΝΙΣΗ POPUP
+        // setShowPathCelebration(true); // <--- ΑΦΑΙΡΕΣΗ
       } else if (savedPath.date === todayStr) {
         // Αν δεν έχει τελειώσει αλλά έχει ξεκινήσει
         setPathGuesses(savedPath.guesses ?? []);
@@ -452,7 +453,7 @@ export default function EurodlePage() {
         const saved = JSON.parse(raw);
         if (saved.date === date) {
           setGuesses(saved.guesses ?? []); setWon(saved.won ?? false); setGameOver(saved.gameOver ?? false); setWonAtGuess(saved.wonAtGuess ?? null);
-          if (saved.won) setShowCelebration(true); // <--- ΕΜΦΑΝΙΣΗ POPUP
+          // if (saved.won) setShowCelebration(true); // <--- ΑΦΑΙΡΕΣΗ
         }
       }
     }).catch(() => { });
@@ -473,7 +474,7 @@ export default function EurodlePage() {
         setHlScore(savedHL.score ?? 0);
         if (savedHL.stat) setHlStat(savedHL.stat); // <--- Διαβάζει την κατηγορία
         setHlGameOver(true);
-        setShowHLCelebration(true); // <--- ΕΜΦΑΝΙΣΗ POPUP
+        // setShowHLCelebration(true); // <--- ΑΦΑΙΡΕΣΗ
       }
     }
   }, []);
