@@ -826,8 +826,8 @@ export default function EurodlePage() {
 
             <CountdownTimer />
 
-            <button onClick={() => { setShowHLCelebration(false); setActiveMode("menu"); }} style={{ width: "100%", padding: "14px", borderRadius: 12, fontSize: 16, fontWeight: 800, background: "linear-gradient(135deg, #fbbf24, #d97706)", color: "#111", border: "none", cursor: "pointer", fontFamily: "'Barlow Condensed', sans-serif", textTransform: "uppercase", marginTop: 20 }}>
-              BACK TO MENU 🏠
+            <button onClick={() => { setShowHLCelebration(false); setActiveMode("player_id"); }} style={{ width: "100%", padding: "14px", borderRadius: 12, fontSize: 16, fontWeight: 800, background: "linear-gradient(135deg, #fbbf24, #d97706)", color: "#111", border: "none", cursor: "pointer", fontFamily: "'Barlow Condensed', sans-serif", textTransform: "uppercase", marginTop: 20 }}>
+              NEXT GAME ➔
             </button>
           </div>
         </div>
