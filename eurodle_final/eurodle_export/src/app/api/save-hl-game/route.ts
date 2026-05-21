@@ -5,12 +5,12 @@ import { getServerSession } from 'next-auth/next';
 
 // Υπολογισμός Τρέχουσας Ημερομηνίας Ελλάδος
 const getGreeceDate = () => {
-  return new Intl.DateTimeFormat('el-GR', {
+  return new Intl.DateTimeFormat('en-CA', {
     timeZone: 'Europe/Athens',
     year: 'numeric',
     month: '2-digit',
     day: '2-digit',
-  }).format(new Date()); // Παράδειγμα: "12/05/2026"
+  }).format(new Date()); // Παράδειγμα: "2026-05-12"
 };
 
 export async function POST(req: Request) {

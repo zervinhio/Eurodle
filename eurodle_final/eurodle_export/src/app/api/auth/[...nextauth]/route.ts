@@ -72,6 +72,25 @@ const handler = NextAuth({
         (session.user as any).id = dbUser._id;
         (session.user as any).score = dbUser.score || 0;
         (session.user as any).streak = currentStreak;
+
+        const athensFormatter = new Intl.DateTimeFormat('en-CA', { timeZone: 'Europe/Athens' });
+        const todayStr = athensFormatter.format(new Date());
+
+        // Classic Played check
+        if (dbUser.lastPlayed) {
+          const lastPlayedStr = athensFormatter.format(dbUser.lastPlayed);
+          (session.user as any).playedClassic = (todayStr === lastPlayedStr);
+        } else {
+          (session.user as any).playedClassic = false;
+        }
+
+        // Higher/Lower Played check (Assuming database format "YYYY-MM-DD")
+        // Note: save-hl-game uses el-GR "DD/MM/YYYY", so we must be consistent.
+        // Let's use the same athensFormatter 'en-CA' for consistency everywhere.
+        (session.user as any).playedHL = (dbUser.lastPlayedHL === todayStr);
+
+        // Path Played check
+        (session.user as any).playedPath = (dbUser.lastPlayedPath === todayStr);
       }
       return session;
     }

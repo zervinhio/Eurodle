@@ -206,8 +206,28 @@ export default function EurodlePage() {
 
     // Load Scores/Streaks
     if (session?.user) {
-      setLocalStreak((session.user as any).streak || 0);
-      setLocalScore((session.user as any).score || 0);
+      const u = session.user as any;
+      setLocalStreak(u.streak || 0);
+      setLocalScore(u.score || 0);
+
+      // --- SERVER-SIDE LOCKDOWN ---
+      // Αν ο server λέει ότι έχουμε παίξει, κλειδώνουμε τα modes αμέσως
+      if (u.playedClassic) {
+        setGameOver(true);
+        setWon(true);
+        setShowCelebration(true);
+      }
+      if (u.playedHL) {
+        setHlHasPlayedToday(true);
+        setHlGameOver(true);
+        setShowHLCelebration(true);
+      }
+      if (u.playedPath) {
+        setPathHasPlayedToday(true);
+        setPathGameOver(true);
+        setPathWon(true);
+        setShowPathCelebration(true);
+      }
     } else {
       setLocalStreak(0);
       setLocalScore(0);
