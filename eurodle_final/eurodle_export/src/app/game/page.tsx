@@ -396,7 +396,7 @@ export default function EurodlePage() {
         localStorage.removeItem(USER_PATH_KEY);
       }
     }
-  }, []);
+  }, [userEmail, USER_PATH_KEY]);
 
   useEffect(() => {
     if (session?.user) {
