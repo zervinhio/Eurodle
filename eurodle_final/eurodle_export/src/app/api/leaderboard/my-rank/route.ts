@@ -12,7 +12,7 @@ export async function GET() {
 
     await connectDB();
 
-    const currentUser = await User.findOne({ email: session.user.email }).select("score");
+    const currentUser = await User.findOne({ email: session.user.email }).select("score name image");
     if (!currentUser) {
       return NextResponse.json({ rank: null });
     }
@@ -26,8 +26,8 @@ export async function GET() {
     return NextResponse.json({ 
       rank, 
       score: currentUser.score,
-      name: session.user.name,
-      image: session.user.image 
+      name: currentUser.name,
+      image: currentUser.image 
     });
   } catch (error) {
     console.error("Error fetching user rank:", error);
