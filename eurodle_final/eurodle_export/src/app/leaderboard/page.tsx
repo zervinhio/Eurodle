@@ -12,9 +12,11 @@ interface Player {
 
 export default function LeaderboardPage() {
   const [players, setPlayers] = useState<Player[]>([]);
+  const [myRank, setMyRank] = useState<{ rank: number; score: number; name: string; image: string } | null>(null);
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
+    // Φόρτωση Top 50
     fetch("/api/leaderboard")
       .then((res) => res.json())
       .then((data) => {
@@ -22,6 +24,14 @@ export default function LeaderboardPage() {
         setLoading(false);
       })
       .catch(() => setLoading(false));
+
+    // Φόρτωση Προσωπικής Κατάταξης
+    fetch("/api/leaderboard/my-rank")
+      .then((res) => res.json())
+      .then((data) => {
+        if (data.rank) setMyRank(data);
+      })
+      .catch(() => {});
   }, []);
 
   return (
@@ -55,6 +65,30 @@ export default function LeaderboardPage() {
           </h1>
           <p style={{ color: "rgba(255,255,255,0.5)", textTransform: "uppercase", letterSpacing: 2, fontSize: 14 }}>Top 50 Eurodle Players</p>
         </div>
+
+        {/* Your Rank Section */}
+        {myRank && (
+          <div style={{ marginBottom: 30, animation: "fadeIn 0.5s ease" }}>
+            <div style={{ fontSize: 12, color: "#f97316", fontWeight: 800, textTransform: "uppercase", letterSpacing: 2, marginBottom: 10, textAlign: "center" }}>YOUR STANDING</div>
+            <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", background: "rgba(249,115,22,0.15)", border: "2px solid #f97316", padding: "16px 20px", borderRadius: 20, backdropFilter: "blur(10px)", boxShadow: "0 0 20px rgba(249,115,22,0.2)" }}>
+              <div style={{ display: "flex", alignItems: "center", gap: 16 }}>
+                <div style={{ fontSize: 28, fontWeight: 900, color: "#fff", fontFamily: "'Barlow Condensed', sans-serif", minWidth: 40 }}>
+                  #{myRank.rank}
+                </div>
+                {myRank.image ? (
+                  <img src={myRank.image} alt="Me" style={{ width: 45, height: 45, borderRadius: "50%", border: "2px solid #f97316", objectFit: "cover" }} />
+                ) : (
+                  <img src="https://cdn-icons-png.flaticon.com/512/3501/3501007.png" alt="Guest" style={{ width: 45, height: 45, borderRadius: "50%", border: "2px solid #f97316", objectFit: "cover" }} />
+                )}
+                <div style={{ fontWeight: 800, color: "#fff", fontSize: 18, fontFamily: "'Barlow Condensed', sans-serif", textTransform: "uppercase" }}>{myRank.name} (YOU)</div>
+              </div>
+              <div style={{ textAlign: "right" }}>
+                <div style={{ fontSize: 10, color: "rgba(255,255,255,0.5)", textTransform: "uppercase" }}>Current Score</div>
+                <div style={{ fontSize: 24, fontWeight: 900, color: "#fbbf24", fontFamily: "'Barlow Condensed', sans-serif" }}>{myRank.score}</div>
+              </div>
+            </div>
+          </div>
+        )}
 
         {/* Players List */}
         <div style={{ display: "flex", flexDirection: "column", gap: 12 }}>
