@@ -462,12 +462,12 @@ export default function EurodlePage() {
         }
       }
     }).catch(() => { });
-  }, []);
+  }, [userEmail, USER_STORAGE_KEY]);
 
   useEffect(() => {
     if (!todayDate) return;
     localStorage.setItem(USER_STORAGE_KEY, JSON.stringify({ date: todayDate, guesses, won, gameOver, wonAtGuess }));
-  }, [guesses, won, gameOver, todayDate, wonAtGuess]);
+  }, [guesses, won, gameOver, todayDate, wonAtGuess, USER_STORAGE_KEY]);
 
   useEffect(() => {
     const todayStr = new Intl.DateTimeFormat('en-CA', { timeZone: 'Europe/Athens' }).format(new Date());
@@ -482,7 +482,7 @@ export default function EurodlePage() {
         // setShowHLCelebration(true); // <--- ΑΦΑΙΡΕΣΗ
       }
     }
-  }, []);
+  }, [userEmail, USER_HL_KEY]);
 
   // Classic Game Handlers
   const handleQueryChange = useCallback((val: string) => {
