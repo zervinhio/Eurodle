@@ -192,12 +192,20 @@ export default function EurodlePage() {
   const USER_HL_KEY = `eurodle_hl_state_${userEmail}`;
   const USER_ICON_KEY = `${ICON_STORAGE_KEY_BASE}_${userEmail}`;
 
+  // Use a ref to track the last user we loaded state for
+  const lastUserRef = useRef<string | null>(null);
+
   // Reset state when user changes
   useEffect(() => {
-    // Reset all game states to default before loading new ones
-    setGuesses([]); setWon(false); setGameOver(false); setWonAtGuess(null);
-    setPathGuesses([]); setPathGameOver(false); setPathWon(false); setPathPoints(0); setPathHasPlayedToday(false); setPathUnlockedHints([]);
-    setHlScore(0); setHlGameOver(false); setHlGameStarted(false); setHlHasPlayedToday(false);
+    // Only reset if the user has actually changed from the last one we handled
+    if (lastUserRef.current !== userEmail) {
+      // Reset all game states to default before loading new ones
+      setGuesses([]); setWon(false); setGameOver(false); setWonAtGuess(null);
+      setPathGuesses([]); setPathGameOver(false); setPathWon(false); setPathPoints(0); setPathHasPlayedToday(false); setPathUnlockedHints([]);
+      setHlScore(0); setHlGameOver(false); setHlGameStarted(false); setHlHasPlayedToday(false);
+      
+      lastUserRef.current = userEmail;
+    }
     
     // Load User Icon
     const savedIcon = localStorage.getItem(USER_ICON_KEY);
