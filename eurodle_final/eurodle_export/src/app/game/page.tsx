@@ -160,7 +160,7 @@ export default function EurodlePage() {
   const [wonAtGuess, setWonAtGuess] = useState<number | null>(null);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState("");
-  const [todayDate, setTodayDate] = useState("");
+  const [todayDate, setTodayDate] = useState(() => new Intl.DateTimeFormat('en-CA', { timeZone: 'Europe/Athens' }).format(new Date()));
   const [showDropdown, setShowDropdown] = useState(false);
   const [showCelebration, setShowCelebration] = useState(false);
   // --- Player Path States ---
@@ -407,8 +407,8 @@ export default function EurodlePage() {
       const todayStr = new Intl.DateTimeFormat('en-CA', { timeZone: 'Europe/Athens' }).format(new Date());
 
       // 1. Sync Classic Mode
-      const rawClassic = localStorage.getItem(USER_STORAGE_KEY);
-      if (rawClassic) {
+      const rawClassic = localStorage.getItem(`${STORAGE_KEY_BASE}_guest`);
+      if (rawClassic && userEmail !== "guest") {
         const saved = JSON.parse(rawClassic);
         if (saved.date === todayStr && saved.won && !localStorage.getItem("eurodle_classic_synced")) {
           const pts = getPoints(saved.guesses.length);
@@ -429,8 +429,8 @@ export default function EurodlePage() {
       }
 
       // 2. Sync Player ID (Path) Mode
-      const rawPath = localStorage.getItem(USER_PATH_KEY);
-      if (rawPath) {
+      const rawPath = localStorage.getItem(`eurodle_path_state_guest`);
+      if (rawPath && userEmail !== "guest") {
         const savedPath = JSON.parse(rawPath);
         if (savedPath.date === todayStr && savedPath.won && !localStorage.getItem("eurodle_path_synced")) {
           fetch("/api/save-game", {
@@ -451,16 +451,16 @@ export default function EurodlePage() {
   }, [session, todayDate]);
 
   useEffect(() => {
+    const todayStr = new Intl.DateTimeFormat('en-CA', { timeZone: 'Europe/Athens' }).format(new Date());
+    const raw = localStorage.getItem(USER_STORAGE_KEY);
+    if (raw) {
+      const saved = JSON.parse(raw);
+      if (saved.date === todayStr) {
+        setGuesses(saved.guesses ?? []); setWon(saved.won ?? false); setGameOver(saved.gameOver ?? false); setWonAtGuess(saved.wonAtGuess ?? null);
+      }
+    }
     fetch("/api/daily").then(r => r.json()).then(({ date }) => {
       setTodayDate(date);
-      const raw = localStorage.getItem(USER_STORAGE_KEY);
-      if (raw) {
-        const saved = JSON.parse(raw);
-        if (saved.date === date) {
-          setGuesses(saved.guesses ?? []); setWon(saved.won ?? false); setGameOver(saved.gameOver ?? false); setWonAtGuess(saved.wonAtGuess ?? null);
-          // if (saved.won) setShowCelebration(true); // <--- ΑΦΑΙΡΕΣΗ
-        }
-      }
     }).catch(() => { });
   }, [userEmail, USER_STORAGE_KEY]);
 
@@ -474,15 +474,31 @@ export default function EurodlePage() {
     const rawHL = localStorage.getItem(USER_HL_KEY);
     if (rawHL) {
       const savedHL = JSON.parse(rawHL);
-      if (savedHL.date === todayStr && savedHL.gameOver) {
-        setHlHasPlayedToday(true);
+      if (savedHL.date === todayStr) {
+        setHlHasPlayedToday(savedHL.gameOver ?? false);
         setHlScore(savedHL.score ?? 0);
-        if (savedHL.stat) setHlStat(savedHL.stat); // <--- Διαβάζει την κατηγορία
-        setHlGameOver(true);
-        // setShowHLCelebration(true); // <--- ΑΦΑΙΡΕΣΗ
+        if (savedHL.stat) setHlStat(savedHL.stat);
+        setHlGameOver(savedHL.gameOver ?? false);
+        if (savedHL.player1) setHlPlayer1(savedHL.player1);
+        if (savedHL.player2) setHlPlayer2(savedHL.player2);
+        if (savedHL.gameStarted) setHlGameStarted(savedHL.gameStarted);
       }
     }
   }, [userEmail, USER_HL_KEY]);
+
+  useEffect(() => {
+    if ((!hlGameStarted && !hlGameOver) || !hlPlayer1 || !hlPlayer2) return;
+    const todayStr = new Intl.DateTimeFormat('en-CA', { timeZone: 'Europe/Athens' }).format(new Date());
+    localStorage.setItem(USER_HL_KEY, JSON.stringify({
+      date: todayStr,
+      score: hlScore,
+      player1: hlPlayer1,
+      player2: hlPlayer2,
+      stat: hlStat,
+      gameOver: hlGameOver,
+      gameStarted: hlGameStarted
+    }));
+  }, [hlScore, hlPlayer1, hlPlayer2, hlStat, hlGameOver, hlGameStarted, USER_HL_KEY]);
 
   // Classic Game Handlers
   const handleQueryChange = useCallback((val: string) => {
